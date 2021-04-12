@@ -1,20 +1,25 @@
 extern crate imap;
 extern crate native_tls;
+extern crate dotenv;
 
 use mailparse::parse_headers;
 use mailparse::parse_mail;
 use std::fs::File;
 use std::io::prelude::*;
 use std::vec;
-
+use dotenv::dotenv;
+  
 fn main() {
-    let domain = "imap.gmail.com";
-
+    dotenv().ok();
+    let domain = dotenv::var("IMAP_SERVER").unwrap();
+    let email = dotenv::var("EMAIL").unwrap();
+    let password = dotenv::var("PASSWORD").unwrap();
+      
     let tls = native_tls::TlsConnector::builder().build().unwrap();
-    let client = imap::connect((domain, 993), domain, &tls).unwrap();
+    let client = imap::connect((domain.clone(), 993), domain.clone(), &tls).unwrap();
 
     let mut imap_session = client
-        .login("qizengtai@gmail.com", "yrwqwrhlfxtsfapt")
+        .login(email, password)
         .expect("Failed to login.");
 
     // we want to fetch the first email in the INBOX mailbox
