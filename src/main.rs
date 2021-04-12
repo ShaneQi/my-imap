@@ -99,8 +99,10 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         index += 1;
     }
     if found_sequences.len() == 0 {
-        log::warn!("Didn't find any Electricity Meter messages.");
+        log::warn!("Didn't find any Electricity Meter message.");
         return Ok(());
+    } else {
+        log::info!("Found {} Electricity Meter message(s).", found_sequences.len());
     }
 
     let query_sequences_strings: vec::Vec<String> = found_sequences
@@ -115,7 +117,10 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         .0
         .fetch(query_sequences.clone(), "BODY[]")
         .map_err(|_| ElectricityMeterError::FetchBodies)?;
+    let mut index = 0;
     for message in electricity_meter_messages.iter() {
+        index += 1;
+        log::info!("Processing the Electricity Meter message #{}.", index);
         let body = message.body().ok_or(ElectricityMeterError::ReadBodies)?;
         let parsed_body = parse_mail(body).map_err(|_| ElectricityMeterError::ParseBodies)?;
         log::info!("Subparts count: {}.", parsed_body.subparts.len());
@@ -147,17 +152,17 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
                     pos += bytes_written;
                 }
                 log::info!("Writing finished.");
+                log::info!("Archiving the Electricity Meter message #{}.", index);
+                imap_session
+                    .0
+                    .mv(query_sequences.clone(), "Archive")
+                    .map_err(|_| ElectricityMeterError::Archive)?;
             }
         }
         if !found {
             return Err(ElectricityMeterError::FindAttachment);
         }
     }
-    log::info!("Archiving the Electricity Meter messages.");
-    imap_session
-        .0
-        .mv(query_sequences.clone(), "Archive")
-        .map_err(|_| ElectricityMeterError::Archive)?;
     return Ok(());
 }
 
