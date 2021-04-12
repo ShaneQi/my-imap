@@ -14,6 +14,8 @@ fn main() {
     let domain = dotenv::var("IMAP_SERVER").unwrap();
     let email = dotenv::var("EMAIL").unwrap();
     let password = dotenv::var("PASSWORD").unwrap();
+    // Don't include the ending `/`.
+    let electricity_meter_file_path = dotenv::var("ELECTRICITY_METER_FILE_PATH").unwrap();
       
     let tls = native_tls::TlsConnector::builder().build().unwrap();
     let client = imap::connect((domain.clone(), 993), domain.clone(), &tls).unwrap();
@@ -80,7 +82,7 @@ fn main() {
                     .expect("Faild to read the attachment in the Electricity Meter message.");
                 let file_name = &subpart.get_content_disposition().params["filename"];
                 let mut pos = 0;
-                let mut buffer = File::create(format!("/Users/shane/Downloads/{}", file_name))
+                let mut buffer = File::create(format!("{}/{}", electricity_meter_file_path, file_name))
                     .expect(&format!("Failed to create the csv file {}.", file_name));
                 while pos < csv_data.len() {
                     let bytes_written = buffer
