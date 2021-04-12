@@ -1,28 +1,34 @@
+extern crate dotenv;
 extern crate imap;
 extern crate native_tls;
-extern crate dotenv;
 
+use dotenv::dotenv;
 use mailparse::parse_headers;
 use mailparse::parse_mail;
 use std::fs::File;
 use std::io::prelude::*;
+use std::thread;
+use std::time::Duration;
 use std::vec;
-use dotenv::dotenv;
-  
+
 fn main() {
     dotenv().ok();
+    loop {
+        electricity_meter();
+        thread::sleep(Duration::from_secs(3600));
+    }
+}
+
+fn electricity_meter() {
     let domain = dotenv::var("IMAP_SERVER").unwrap();
     let email = dotenv::var("EMAIL").unwrap();
     let password = dotenv::var("PASSWORD").unwrap();
     // Don't include the ending `/`.
     let electricity_meter_file_path = dotenv::var("ELECTRICITY_METER_FILE_PATH").unwrap();
-      
     let tls = native_tls::TlsConnector::builder().build().unwrap();
     let client = imap::connect((domain.clone(), 993), domain.clone(), &tls).unwrap();
 
-    let mut imap_session = client
-        .login(email, password)
-        .expect("Failed to login.");
+    let mut imap_session = client.login(email, password).expect("Failed to login.");
 
     // we want to fetch the first email in the INBOX mailbox
     imap_session.select("INBOX").expect("Failed to open INBOX");
@@ -82,14 +88,16 @@ fn main() {
                     .expect("Faild to read the attachment in the Electricity Meter message.");
                 let file_name = &subpart.get_content_disposition().params["filename"];
                 let mut pos = 0;
-                let mut buffer = File::create(format!("{}/{}", electricity_meter_file_path, file_name))
-                    .expect(&format!("Failed to create the csv file {}.", file_name));
+                let mut buffer =
+                    File::create(format!("{}/{}", electricity_meter_file_path, file_name))
+                        .expect(&format!("Failed to create the csv file {}.", file_name));
                 while pos < csv_data.len() {
                     let bytes_written = buffer
                         .write(&csv_data[pos..])
                         .expect("Failed to write a byte.");
                     pos += bytes_written;
                 }
+                println!("Wrote {}.", file_name);
             }
         }
         if !found {
@@ -98,7 +106,8 @@ fn main() {
     }
     imap_session
         .mv(query_sequences.clone(), "Archive")
-        .expect("Failed to archive THE message..");
+        .expect("Failed to archive the Electricity Meter messages.");
+    println!("Archived the Electricity Meter messages.");
 
     imap_session.logout().expect("Failed to logout.");
 }
