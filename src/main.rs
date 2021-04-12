@@ -16,52 +16,88 @@ fn main() {
     dotenv().ok();
     let interval = dotenv::var("INTERVAL").unwrap().parse::<u64>().unwrap();
     SimpleLogger::new().init().unwrap();
-    log::info!("Start");
+    log::info!("START");
     loop {
-        electricity_meter();
+        let electricity_meter_result = electricity_meter();
+        match electricity_meter_result {
+            Ok(_) => log::info!("Successful Electricity Meter task."),
+            Err(error) => log::error!("Failed Electricity Meter task, error: {:?}.", error),
+        }
         log::info!("Sleeping for {} seconds.", interval);
         thread::sleep(Duration::from_secs(interval));
     }
 }
 
-fn electricity_meter() {
-    let domain = dotenv::var("IMAP_SERVER").unwrap();
-    let email = dotenv::var("EMAIL").unwrap();
-    let password = dotenv::var("PASSWORD").unwrap();
+#[derive(Debug)]
+enum ElectricityMeterError {
+    EnvVar,
+    TLS,
+    Login,
+    SelectInbox,
+    FetchHeaders,
+    ReadHeaders,
+    ParseHeaders,
+    FetchBodies,
+    ReadBodies,
+    ParseBodies,
+    ReadAttachment,
+    FindAttachment,
+    CreateAttachment(String),
+    WriteAttachment(String),
+    Archive,
+    Logout,
+}
+
+fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
+    let domain = dotenv::var("IMAP_SERVER").map_err(|_| ElectricityMeterError::EnvVar)?;
+    let email = dotenv::var("EMAIL").map_err(|_| ElectricityMeterError::EnvVar)?;
+    let password = dotenv::var("PASSWORD").map_err(|_| ElectricityMeterError::EnvVar)?;
     // Don't include the ending `/`.
-    let electricity_meter_file_path = dotenv::var("ELECTRICITY_METER_FILE_PATH").unwrap();
-    let tls = native_tls::TlsConnector::builder().build().unwrap();
-    let client = imap::connect((domain.clone(), 993), domain.clone(), &tls).unwrap();
+    let electricity_meter_file_path =
+        dotenv::var("ELECTRICITY_METER_FILE_PATH").map_err(|_| ElectricityMeterError::EnvVar)?;
+    let tls = native_tls::TlsConnector::builder()
+        .build()
+        .map_err(|_| ElectricityMeterError::TLS)?;
+    let client = imap::connect((domain.clone(), 993), domain.clone(), &tls)
+        .map_err(|_| ElectricityMeterError::TLS)?;
 
-    let mut imap_session = client.login(email, password).expect("Failed to login.");
+    log::info!("Establishing connection.");
+    let mut imap_session = client
+        .login(email, password)
+        .map_err(|_| ElectricityMeterError::Login)?;
 
-    // we want to fetch the first email in the INBOX mailbox
-    imap_session.select("INBOX").expect("Failed to open INBOX");
+    log::info!("Selecting INBOX.");
+    imap_session
+        .select("INBOX")
+        .map_err(|_| ElectricityMeterError::SelectInbox)?;
 
+    log::info!("Fetching headers.");
     let header_messages = imap_session
         .fetch("1:100", "BODY[HEADER]")
-        .expect("Failed to fetched header messages.");
+        .map_err(|_| ElectricityMeterError::FetchHeaders)?;
 
     let mut found_sequences: vec::Vec<u8> = vec![];
     let mut index = 1;
     for message in header_messages.iter() {
-        let header = message
-            .header()
-            .expect("Failed to read a fetched header message.");
+        let header = message.header().ok_or(ElectricityMeterError::ReadHeaders)?;
         let (parsed_header, _) =
-            parse_headers(header).expect("Failed to parse headers of a message.");
+            parse_headers(header).map_err(|_| ElectricityMeterError::ParseHeaders)?;
         for header in parsed_header {
-            if header.get_key().to_lowercase() == "subject"
-                && header.get_value().to_lowercase() == "smart meter texas – subscription report"
-            {
-                found_sequences.push(index);
+            if header.get_key().to_lowercase() == "subject" {
+                let subject = header.get_value();
+                if subject.to_lowercase() == "smart meter texas – subscription report" {
+                    log::info!("Found message with subject: {}.", subject);
+                    found_sequences.push(index);
+                } else {
+                    log::info!("Skipping message with subject: {}.", subject);
+                }
             }
         }
         index += 1;
     }
     if found_sequences.len() == 0 {
         log::warn!("Didn't find any Electricity Meter messages.");
-        return;
+        return Ok(());
     }
 
     let query_sequences_strings: vec::Vec<String> = found_sequences
@@ -69,16 +105,16 @@ fn electricity_meter() {
         .map(|x| -> String { return format!("{}", x) })
         .collect();
     let query_sequences = query_sequences_strings.join(",");
+    log::info!("Query sequences for fetching bodies: {}.", query_sequences);
 
+    log::info!("Fetching bodies");
     let electricity_meter_messages = imap_session
         .fetch(query_sequences.clone(), "BODY[]")
-        .expect("Failed to fetch Electricity Meter messages.");
+        .map_err(|_| ElectricityMeterError::FetchBodies)?;
     for message in electricity_meter_messages.iter() {
-        let body = message
-            .body()
-            .expect("Failed to read body of the Electricity Meter message.");
-        let parsed_body =
-            parse_mail(body).expect("Failed to parse the Electricity Meter messsage.");
+        let body = message.body().ok_or(ElectricityMeterError::ReadBodies)?;
+        let parsed_body = parse_mail(body).map_err(|_| ElectricityMeterError::ParseBodies)?;
+        log::info!("Subparts count: {}.", parsed_body.subparts.len());
         let mut found = false;
         for subpart in parsed_body.subparts {
             if subpart
@@ -90,29 +126,37 @@ fn electricity_meter() {
                 found = true;
                 let csv_data = subpart
                     .get_body_raw()
-                    .expect("Faild to read the attachment in the Electricity Meter message.");
+                    .map_err(|_| ElectricityMeterError::ReadAttachment)?;
                 let file_name = &subpart.get_content_disposition().params["filename"];
+                log::info!("Found application/xml subpart, filename: {}.", file_name);
+                log::info!("Writing.");
                 let mut pos = 0;
                 let mut buffer =
                     File::create(format!("{}/{}", electricity_meter_file_path, file_name))
-                        .expect(&format!("Failed to create the csv file {}.", file_name));
+                        .map_err(|_| {
+                            ElectricityMeterError::CreateAttachment(file_name.to_string())
+                        })?;
                 while pos < csv_data.len() {
-                    let bytes_written = buffer
-                        .write(&csv_data[pos..])
-                        .expect("Failed to write a byte.");
+                    let bytes_written = buffer.write(&csv_data[pos..]).map_err(|_| {
+                        ElectricityMeterError::WriteAttachment(file_name.to_string())
+                    })?;
                     pos += bytes_written;
                 }
-                log::info!("Wrote {}.", file_name);
+                log::info!("Writing finished.");
             }
         }
         if !found {
-            panic!("Failed to find the attachment in the Electricity Meter message.")
+            return Err(ElectricityMeterError::FindAttachment);
         }
     }
+    log::info!("Archiving the Electricity Meter messages.");
     imap_session
         .mv(query_sequences.clone(), "Archive")
-        .expect("Failed to archive the Electricity Meter messages.");
-    log::info!("Archived the Electricity Meter messages.");
+        .map_err(|_| ElectricityMeterError::Archive)?;
 
-    imap_session.logout().expect("Failed to logout.");
+    log::info!("Logging out IMAP client.");
+    imap_session
+        .logout()
+        .map_err(|_| ElectricityMeterError::Logout)?;
+    return Ok(());
 }
