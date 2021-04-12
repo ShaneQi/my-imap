@@ -5,6 +5,7 @@ extern crate native_tls;
 use dotenv::dotenv;
 use mailparse::parse_headers;
 use mailparse::parse_mail;
+use simple_logger::SimpleLogger;
 use std::fs::File;
 use std::io::prelude::*;
 use std::thread;
@@ -13,9 +14,13 @@ use std::vec;
 
 fn main() {
     dotenv().ok();
+    let interval = dotenv::var("INTERVAL").unwrap().parse::<u64>().unwrap();
+    SimpleLogger::new().init().unwrap();
+    log::info!("Start");
     loop {
         electricity_meter();
-        thread::sleep(Duration::from_secs(3600));
+        log::info!("Sleeping for {} seconds.", interval);
+        thread::sleep(Duration::from_secs(interval));
     }
 }
 
@@ -55,7 +60,7 @@ fn electricity_meter() {
         index += 1;
     }
     if found_sequences.len() == 0 {
-        println!("Didn't find Electricity Meter messages.");
+        log::warn!("Didn't find any Electricity Meter messages.");
         return;
     }
 
@@ -97,7 +102,7 @@ fn electricity_meter() {
                         .expect("Failed to write a byte.");
                     pos += bytes_written;
                 }
-                println!("Wrote {}.", file_name);
+                log::info!("Wrote {}.", file_name);
             }
         }
         if !found {
@@ -107,7 +112,7 @@ fn electricity_meter() {
     imap_session
         .mv(query_sequences.clone(), "Archive")
         .expect("Failed to archive the Electricity Meter messages.");
-    println!("Archived the Electricity Meter messages.");
+    log::info!("Archived the Electricity Meter messages.");
 
     imap_session.logout().expect("Failed to logout.");
 }
