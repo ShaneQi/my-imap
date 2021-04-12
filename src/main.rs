@@ -45,7 +45,6 @@ enum ElectricityMeterError {
     CreateAttachment(String),
     WriteAttachment(String),
     Archive,
-    Logout,
 }
 
 fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
@@ -62,17 +61,21 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         .map_err(|_| ElectricityMeterError::TLS)?;
 
     log::info!("Establishing connection.");
-    let mut imap_session = client
+    let imap_session_value = client
         .login(email, password)
         .map_err(|_| ElectricityMeterError::Login)?;
 
+    let mut imap_session = IMAPSession(imap_session_value);
+
     log::info!("Selecting INBOX.");
     imap_session
+        .0
         .select("INBOX")
         .map_err(|_| ElectricityMeterError::SelectInbox)?;
 
     log::info!("Fetching headers.");
     let header_messages = imap_session
+        .0
         .fetch("1:100", "BODY[HEADER]")
         .map_err(|_| ElectricityMeterError::FetchHeaders)?;
 
@@ -109,6 +112,7 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
 
     log::info!("Fetching bodies");
     let electricity_meter_messages = imap_session
+        .0
         .fetch(query_sequences.clone(), "BODY[]")
         .map_err(|_| ElectricityMeterError::FetchBodies)?;
     for message in electricity_meter_messages.iter() {
@@ -151,12 +155,20 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
     }
     log::info!("Archiving the Electricity Meter messages.");
     imap_session
+        .0
         .mv(query_sequences.clone(), "Archive")
         .map_err(|_| ElectricityMeterError::Archive)?;
-
-    log::info!("Logging out IMAP client.");
-    imap_session
-        .logout()
-        .map_err(|_| ElectricityMeterError::Logout)?;
     return Ok(());
+}
+
+struct IMAPSession(imap::Session<native_tls::TlsStream<std::net::TcpStream>>);
+
+impl Drop for IMAPSession {
+    fn drop(&mut self) {
+        log::info!("Logging out IMAP session.");
+        match self.0.logout() {
+            Ok(_) => {}
+            Err(error) => log::error!("Failed to logout IMAP session, error: {}.", error),
+        }
+    }
 }
