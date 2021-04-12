@@ -5,10 +5,9 @@ use mailparse::parse_headers;
 use mailparse::parse_mail;
 use std::fs::File;
 use std::io::prelude::*;
+use std::vec;
 
 fn main() {
-    println!("Hello, world!");
-
     let domain = "imap.gmail.com";
 
     let tls = native_tls::TlsConnector::builder().build().unwrap();
@@ -25,9 +24,9 @@ fn main() {
         .fetch("1:100", "BODY[HEADER]")
         .expect("Failed to fetched header messages.");
 
+    let mut found_sequences: vec::Vec<u8> = vec![];
     let mut index = 1;
-    let mut found = false;
-    'outer: for message in header_messages.iter() {
+    for message in header_messages.iter() {
         let header = message
             .header()
             .expect("Failed to read a fetched header message.");
@@ -37,54 +36,62 @@ fn main() {
             if header.get_key().to_lowercase() == "subject"
                 && header.get_value().to_lowercase() == "smart meter texas – subscription report"
             {
-                found = true;
-                break 'outer;
+                found_sequences.push(index);
             }
         }
         index += 1;
     }
-    if !found {
-        println!("Didn't find THE message");
+    if found_sequences.len() == 0 {
+        println!("Didn't find Electricity Meter messages.");
         return;
     }
 
-    let the_message = imap_session
-        .fetch(format!("{}", index), "BODY[]")
-        .expect("Failed to fetch THE message.");
-
-    let message = the_message
+    let query_sequences_strings: vec::Vec<String> = found_sequences
         .iter()
-        .next()
-        .expect("Something wrong with THE fetched message.");
-    let body = message.body().expect("Failed to read body of THE message.");
-    let parsed_body = parse_mail(body).expect("Failed to parse THE messsage.");
-    let mut found = false;
-    for subpart in parsed_body.subparts {
-        if subpart
-            .ctype
-            .mimetype
-            .to_lowercase()
-            .contains("application/xml")
-        {
-            found = true;
-            let csv_data = subpart
-                .get_body_raw()
-                .expect("Faild to read THE attachment.");
-            let file_name = &subpart.get_content_disposition().params["filename"];
-            let mut pos = 0;
-            let mut buffer = File::create(format!("/Users/shane/Downloads/{}", file_name))
-                .expect("Failed to create the csv file.");
-            while pos < csv_data.len() {
-                let bytes_written = buffer.write(&csv_data[pos..]).expect("Failed to write a byte.");
-                pos += bytes_written;
+        .map(|x| -> String { return format!("{}", x) })
+        .collect();
+    let query_sequences = query_sequences_strings.join(",");
+
+    let electricity_meter_messages = imap_session
+        .fetch(query_sequences.clone(), "BODY[]")
+        .expect("Failed to fetch Electricity Meter messages.");
+    for message in electricity_meter_messages.iter() {
+        let body = message
+            .body()
+            .expect("Failed to read body of the Electricity Meter message.");
+        let parsed_body =
+            parse_mail(body).expect("Failed to parse the Electricity Meter messsage.");
+        let mut found = false;
+        for subpart in parsed_body.subparts {
+            if subpart
+                .ctype
+                .mimetype
+                .to_lowercase()
+                .contains("application/xml")
+            {
+                found = true;
+                let csv_data = subpart
+                    .get_body_raw()
+                    .expect("Faild to read the attachment in the Electricity Meter message.");
+                let file_name = &subpart.get_content_disposition().params["filename"];
+                let mut pos = 0;
+                let mut buffer = File::create(format!("/Users/shane/Downloads/{}", file_name))
+                    .expect(&format!("Failed to create the csv file {}.", file_name));
+                while pos < csv_data.len() {
+                    let bytes_written = buffer
+                        .write(&csv_data[pos..])
+                        .expect("Failed to write a byte.");
+                    pos += bytes_written;
+                }
             }
         }
+        if !found {
+            panic!("Failed to find the attachment in the Electricity Meter message.")
+        }
     }
-    if !found {
-        panic!("Didn't find THE attachment.")
-    }
-
-    // imap_session.mv(format!("{}", index), "Archive").expect("Failed to archive THE message..");
+    imap_session
+        .mv(query_sequences.clone(), "Archive")
+        .expect("Failed to archive THE message..");
 
     imap_session.logout().expect("Failed to logout.");
 }
