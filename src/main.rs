@@ -119,6 +119,7 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         .map_err(|_| ElectricityMeterError::FetchBodies)?;
     let mut index = 0;
     for message in electricity_meter_messages.iter() {
+        let query_sequence = query_sequences_strings[index].clone();
         index += 1;
         log::info!("Processing the Electricity Meter message #{}.", index);
         let body = message.body().ok_or(ElectricityMeterError::ReadBodies)?;
@@ -155,7 +156,7 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
                 log::info!("Archiving the Electricity Meter message #{}.", index);
                 imap_session
                     .0
-                    .mv(query_sequences.clone(), "Archive")
+                    .mv(query_sequence.clone(), "Archive")
                     .map_err(|_| ElectricityMeterError::Archive)?;
             }
         }
