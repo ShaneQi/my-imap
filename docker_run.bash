@@ -1,5 +1,5 @@
-DATA_PATH='/Users/shane/Server/splunk/data/electricity-meter'
-SRC_PATH='/Users/shane/Server/my-imap'
+DATA_PATH='/home/shane/server/persistent/electricity-meter'
+SRC_PATH='/home/shane/server/my-imap'
 docker run \
 -d \
 -v ${DATA_PATH}:/electricity-meter \
