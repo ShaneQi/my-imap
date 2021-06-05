@@ -76,7 +76,7 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
     log::info!("Fetching headers.");
     let header_messages = imap_session
         .0
-        .fetch("1:100", "BODY[HEADER]")
+        .fetch("1:100", "BODY.PEEK[HEADER]")
         .map_err(|_| ElectricityMeterError::FetchHeaders)?;
 
     let mut found_sequences: vec::Vec<u8> = vec![];
