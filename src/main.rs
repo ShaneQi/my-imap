@@ -117,11 +117,9 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         .0
         .fetch(query_sequences.clone(), "BODY[]")
         .map_err(|_| ElectricityMeterError::FetchBodies)?;
-    let mut index = 0;
-    for message in electricity_meter_messages.iter() {
+    for (index, message) in electricity_meter_messages.iter().enumerate().rev() {
         let query_sequence = query_sequences_strings[index].clone();
-        index += 1;
-        log::info!("Processing the Electricity Meter message #{}.", index);
+        log::info!("Processing the Electricity Meter message #{}.", query_sequence.clone());
         let body = message.body().ok_or(ElectricityMeterError::ReadBodies)?;
         let parsed_body = parse_mail(body).map_err(|_| ElectricityMeterError::ParseBodies)?;
         log::info!("Subparts count: {}.", parsed_body.subparts.len());
@@ -153,7 +151,7 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
                     pos += bytes_written;
                 }
                 log::info!("Writing finished.");
-                log::info!("Archiving the Electricity Meter message #{}.", index);
+                log::info!("Archiving the Electricity Meter message #{}.", query_sequence.clone());
                 imap_session
                     .0
                     .mv(query_sequence.clone(), "Archive")
