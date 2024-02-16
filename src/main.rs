@@ -129,14 +129,14 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
                 .ctype
                 .mimetype
                 .to_lowercase()
-                .contains("application/xml")
+                .contains("text/csv")
             {
                 found = true;
                 let csv_data = subpart
                     .get_body_raw()
                     .map_err(|_| ElectricityMeterError::ReadAttachment)?;
                 let file_name = &subpart.get_content_disposition().params["filename"];
-                log::info!("Found application/xml subpart, filename: {}.", file_name);
+                log::info!("Found text/csv subpart, filename: {}.", file_name);
                 log::info!("Writing.");
                 let mut pos = 0;
                 let mut buffer =
