@@ -125,13 +125,12 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         log::info!("Subparts count: {}.", parsed_body.subparts.len());
         let mut found = false;
         for subpart in parsed_body.subparts {
-            if subpart
-                .ctype
-                .mimetype
-                .to_lowercase()
-                .contains("text/csv")
-            {
-                found = true;
+						let header = subpart
+                .get_headers().get_raw_bytes();
+            let filename = b"IntervalMeterUsage";
+            let filename_length = filename.len();
+            found = header.windows(filename_length).any(|window| window == filename);
+            if found {
                 let csv_data = subpart
                     .get_body_raw()
                     .map_err(|_| ElectricityMeterError::ReadAttachment)?;
