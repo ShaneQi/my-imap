@@ -19,12 +19,29 @@ fn main() {
     log::info!("START");
     loop {
         let electricity_meter_result = electricity_meter();
-        match electricity_meter_result {
+        match &electricity_meter_result {
             Ok(_) => log::info!("Successful Electricity Meter task."),
             Err(error) => log::error!("Failed Electricity Meter task, error: {:?}.", error),
         }
+        write_health_status(&electricity_meter_result);
         log::info!("Sleeping for {} seconds.", interval);
         thread::sleep(Duration::from_secs(interval));
+    }
+}
+
+const HEALTH_STATUS_PATH: &str = "/var/run/my-imap/status";
+
+fn write_health_status(result: &Result<(), ElectricityMeterError>) {
+    let body = match result {
+        Ok(_) => "ok\n".to_string(),
+        Err(error) => format!("error: {:?}\n", error),
+    };
+    if let Err(error) = std::fs::write(HEALTH_STATUS_PATH, body) {
+        log::error!(
+            "Failed to write health status file at {}, error: {}.",
+            HEALTH_STATUS_PATH,
+            error
+        );
     }
 }
 
@@ -42,6 +59,7 @@ enum ElectricityMeterError {
     ParseBodies,
     ReadAttachment,
     FindAttachment,
+    GetFilename,
     CreateAttachment(String),
     WriteAttachment(String),
     Archive,
@@ -125,7 +143,7 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
         log::info!("Subparts count: {}.", parsed_body.subparts.len());
         let mut found = false;
         for subpart in parsed_body.subparts {
-						let header = subpart
+            let header = subpart
                 .get_headers().get_raw_bytes();
             let filename = b"IntervalMeterUsage";
             let filename_length = filename.len();
@@ -134,7 +152,11 @@ fn electricity_meter() -> std::result::Result<(), ElectricityMeterError> {
                 let csv_data = subpart
                     .get_body_raw()
                     .map_err(|_| ElectricityMeterError::ReadAttachment)?;
-                let file_name = &subpart.get_content_disposition().params["filename"];
+                let content_disposition = subpart.get_content_disposition();
+                let file_name = content_disposition
+                    .params
+                    .get("filename")
+                    .ok_or(ElectricityMeterError::GetFilename)?;
                 log::info!("Found text/csv subpart, filename: {}.", file_name);
                 log::info!("Writing.");
                 let mut pos = 0;
